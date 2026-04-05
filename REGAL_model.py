@@ -405,9 +405,10 @@ def plot_model(p: ModelParams = None):
     plt.colorbar(im2, ax=ax6, label="p-value", shrink=0.8).ax.yaxis.label.set_color(TEXT_DIM)
     style_ax(ax6, "SENSITIVITY  ·  p-value")
 
-    plt.savefig("/mnt/user-data/outputs/gps_model_output.png",
-                dpi=150, bbox_inches="tight", facecolor=DARK_BG)
-    print("Saved: gps_model_output.png")
+    import os
+    out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gps_model_output.png")
+    plt.savefig(out_path, dpi=150, bbox_inches="tight", facecolor=DARK_BG)
+    print(f"Saved: {out_path}")
     plt.show()
     return fig
 
