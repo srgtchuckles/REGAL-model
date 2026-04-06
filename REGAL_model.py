@@ -335,8 +335,7 @@ def plot_model(p: ModelParams = None):
     ax4.set_facecolor(PANEL_BG)
     ax4.axis("off")
     cd8_comp = p.hla_positive_rate * p.cd8_response_rate * p.cure_fraction_responders
-    cd4_comp = p.hla_positive_rate * p.cd8_response_rate * p.cd4_response_rate * 0.10
-    neg_comp  = (1 - p.hla_positive_rate) * p.hla_neg_cure_fraction
+    hla_neg_comp = p.cd4_response_rate * p.hla_neg_pop * p.cure_fraction_hla_neg
     lines = [
         ("CURE FRACTION DERIVATION", TEXT_MID, 10, True),
         ("", TEXT_DIM, 8, False),
@@ -344,9 +343,12 @@ def plot_model(p: ModelParams = None):
         (f"CD8+ resp rate:     {p.cd8_response_rate*100:.0f}%", TEXT_DIM, 8, False),
         (f"Cure | responder:   {p.cure_fraction_responders*100:.0f}%", TEXT_DIM, 8, False),
         ("", TEXT_DIM, 8, False),
+        (f"HLA-A*02:01- rate: {p.hla_neg_pop*100:.0f}%", TEXT_DIM, 8, False),
+        (f"CD4+ resp rate: {p.cd4_response_rate*100:.0f}%", TEXT_DIM, 8, False),
+        (f"Cure | long pep resp: {p.cure_fraction_hla_neg*100:.0f}%", TEXT_DIM, 8, False),
+        ("", TEXT_DIM, 8, False),
         (f"CD8 component:  {cd8_comp*100:.1f}%", BLUE, 9, False),
-        (f"CD4 bonus:      {cd4_comp*100:.1f}%", BLUE, 9, False),
-        (f"HLA- residual:  {neg_comp*100:.1f}%", BLUE, 9, False),
+        (f"HLA neg component: {hla_neg_comp*100:.1f}%", BLUE, 9, False),
         ("─" * 22, TEXT_DIM, 8, False),
         (f"Aggregate π:    {cure_fraction*100:.1f}%", BLUE, 12, True),
         ("", TEXT_DIM, 8, False),
