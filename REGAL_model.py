@@ -5,8 +5,6 @@ Parametric survival analysis with HLA-stratified cure fraction estimation.
 Grounded in Phase 2 immunologic correlate data (Blood 2019) and historical
 AML CR2 BAT benchmarks.
 
-Dependencies: numpy, scipy, matplotlib
-    pip install numpy scipy matplotlib
 """
 
 import numpy as np
@@ -26,8 +24,10 @@ class ModelParams:
     hla_positive_rate: float = 0.45        # ~45% HLA-A*02:01+ in European AML population
     cd8_response_rate: float = 0.86        # 6/7 HLA-A*02+ tested → CD8+ response (Phase 2)
     cd4_response_rate: float = 0.44        # 4/9 patients → CD4+ response (Phase 2)
+    hla_neg_pop: float = 0.55              # 
     cure_fraction_responders: float = 0.575 # ~57.5% DFS plateau in immunologic responders (Fig 5)
-    hla_neg_cure_fraction: float = 0.04   # Small residual cure via non-A*02 MHC I + CD4 epitopes
+    cure_fraction_hla_neg: float = 0.3
+    hla_neg_cure_fraction: float = 0.025   # Small residual cure via non-A*02 MHC I + CD4 epitopes
 
     # BAT arm — historical AML CR2 (not eligible for transplant)
     bat_median_os: float = 11.0            # months; literature range 8–16mo
@@ -83,9 +83,8 @@ def compute_aggregate_cure_fraction(p: ModelParams) -> float:
       + HLA-A*02:01- × residual cure (non-A*02 epitopes)
     """
     cd8_cure = p.hla_positive_rate * p.cd8_response_rate * p.cure_fraction_responders
-    cd4_bonus = p.hla_positive_rate * p.cd8_response_rate * p.cd4_response_rate * 0.10
-    hla_neg_cure = (1 - p.hla_positive_rate) * p.hla_neg_cure_fraction
-    return min(cd8_cure + cd4_bonus + hla_neg_cure, 0.45)
+    hla_negative_cure = p.cd4_response_rate * p.hla_neg_pop * p.cure_fraction_hla_neg
+    return min(cd8_cure + hla_negative_cure, 0.45)
 
 
 # ─────────────────────────────────────────────
