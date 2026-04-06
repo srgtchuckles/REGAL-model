@@ -279,6 +279,7 @@ def plot_model(p: ModelParams = None):
                            left=0.06, right=0.97, top=0.93, bottom=0.06)
 
     # ── Stat banner ──
+    # fix spacing between the variables here
     stats = [
         ("Cure Fraction π", f"{cure_fraction*100:.1f}%", BLUE),
         ("Hazard Ratio",    f"{hr:.3f}",                  GREEN if hr < 0.7 else AMBER),
@@ -289,7 +290,7 @@ def plot_model(p: ModelParams = None):
         ("GPS 60mo OS",     f"{mixture_cure_survival(np.array([60]), cure_fraction, p.gps_median_os, p.gps_weibull_shape)[0]*100:.1f}%", TEXT_MID),
     ]
     for idx, (lbl, val, col) in enumerate(stats):
-        x = 0.02 + idx * 0.163
+        x = 0.1 + idx * 0.07
         fig.text(x, 0.925, lbl, color=TEXT_DIM, fontsize=7, fontfamily="monospace", transform=fig.transFigure)
         fig.text(x, 0.908, val, color=col,      fontsize=13, fontfamily="monospace",
                  fontweight="bold", transform=fig.transFigure)
