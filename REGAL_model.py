@@ -30,7 +30,7 @@ class ModelParams:
     hla_neg_cure_fraction: float = 0.025   # Small residual cure via non-A*02 MHC I + CD4 epitopes
 
     # BAT arm — historical AML CR2 (not eligible for transplant)
-    bat_median_os: float = 11.0            # months; literature range 8–16mo
+    bat_median_os: float = 12.0           # months; literature range 8–16mo
     bat_weibull_shape: float = 1.2         # k > 1 = increasing hazard (appropriate for AML)
 
     # GPS arm — non-cured susceptible subpopulation
@@ -279,7 +279,6 @@ def plot_model(p: ModelParams = None):
                            left=0.06, right=0.97, top=0.93, bottom=0.06)
 
     # ── Stat banner ──
-    # fix spacing between the variables here
     stats = [
         ("Cure Fraction π", f"{cure_fraction*100:.1f}%", BLUE),
         ("Hazard Ratio",    f"{hr:.3f}",                  GREEN if hr < 0.7 else AMBER),
