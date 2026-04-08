@@ -634,8 +634,42 @@ def plot_simulation_results(
 if __name__ == "__main__":
     p        = ModelParams()
     timeline = TrialTimeline()
-    cure_fraction = compute_aggregate_cure_fraction(p)
 
+    # ── Step 1: Sweep first to find implied π ──────────────────────
+    print("\n  [1/2] Sweeping cure fractions (5,000 sims each)...")
+    cf_range = np.linspace(0.05, 0.45, 9)
+    sweep = sweep_cure_fractions(p, timeline, cf_range, n_sims=5_000, seed=42)
+    print()
+
+    cf_pct = sweep["cure_fractions"] * 100
+
+    # Interpolate — note: means are DECREASING as π increases
+    # so we need to sort for interp1d to work correctly
+    a1_means = sweep["a1_means"]
+    a2_means = sweep["a2_means"]
+
+    # Sort by ascending mean (interp1d needs monotonic x)
+    sort_idx_1 = np.argsort(a1_means)
+    sort_idx_2 = np.argsort(a2_means)
+
+    f_anchor1 = interp1d(
+        a1_means[sort_idx_1], cf_pct[sort_idx_1],
+        kind="linear", fill_value="extrapolate"
+    )
+    f_anchor2 = interp1d(
+        a2_means[sort_idx_2], cf_pct[sort_idx_2],
+        kind="linear", fill_value="extrapolate"
+    )
+
+    implied_pi_1 = float(f_anchor1(timeline.anchor_1_events))
+    implied_pi_2 = float(f_anchor2(timeline.anchor_2_events))
+    needed_cure_fraction = (implied_pi_1 + implied_pi_2) / 2 / 100  # convert % back to fraction
+
+    print(f"  Implied π from anchor 1 (mo46): {implied_pi_1:.1f}%")
+    print(f"  Implied π from anchor 2 (mo58): {implied_pi_2:.1f}%")
+    print(f"  Average implied π:              {needed_cure_fraction*100:.1f}%")
+
+    # ── Step 2: Everything else uses needed_cure_fraction ──────────
     print("=" * 60)
     print("  GPS · REGAL · Monte Carlo Enrollment Simulation")
     print("=" * 60)
@@ -644,21 +678,21 @@ if __name__ == "__main__":
     print(f"  Calendar cutoff:      ~Jan 2026 (month {timeline.calendar_cutoff:.0f})")
     print(f"  Anchor 1:             {timeline.anchor_1_events} events at month {timeline.anchor_1_month:.0f}")
     print(f"  Anchor 2:             {timeline.anchor_2_events} events at month {timeline.anchor_2_month:.0f}")
-    print(f"  Cure fraction π:      {cure_fraction*100:.1f}%")
+    print(f"  Implied cure fraction π: {needed_cure_fraction*100:.1f}%")
     print(f"  BAT median OS:        {p.bat_median_os}mo")
     print(f"  GPS susceptible mOS:  {p.gps_median_os}mo")
     print("-" * 60)
 
-    # Run one trial for visualization
+    # Single trial visualization
     rng_single = np.random.default_rng(99)
-    single = simulate_trial(p, timeline, cure_fraction, rng_single)
+    single = simulate_trial(p, timeline, needed_cure_fraction, rng_single)
     print(f"  Single sim — events at mo46: {single['n_at_anchor_1']}, "
           f"mo58: {single['n_at_anchor_2']}, "
           f"80th event: mo {single['month_of_80th_event']:.1f}")
 
-    # Monte Carlo
-    print("\n  [1/2] Running main Monte Carlo (10,000 sims)...")
-    mc = run_monte_carlo(p, timeline, cure_fraction, n_sims=10_000, seed=42)
+    # ── Step 3: Main Monte Carlo with implied π ─────────────────────
+    print("\n  [2/2] Running main Monte Carlo (10,000 sims)...")
+    mc = run_monte_carlo(p, timeline, needed_cure_fraction, n_sims=10_000, seed=42)
 
     print(f"\n  Anchor 1 (mo46):")
     print(f"    Observed:  {timeline.anchor_1_events}")
@@ -679,28 +713,6 @@ if __name__ == "__main__":
     print(f"    95% CI: [{mc['m80_ci'][0]:.1f}, {mc['m80_ci'][1]:.1f}]")
     print(f"    % sims reaching 80 events: {mc['pct_reached_80']:.1f}%")
 
-    # Cure fraction sweep
-    print("\n  [2/2] Sweeping cure fractions (5,000 sims each)...")
-    cf_range = np.linspace(0.05, 0.45, 9)
-    sweep = sweep_cure_fractions(p, timeline, cf_range, n_sims=5_000, seed=42)
-    print()
-
-    cf_pct = sweep["cure_fractions"] * 100
-
-    # Interpolate mean predicted events as a function of π
-    f_anchor1 = interp1d(sweep["a1_means"], cf_pct, 
-                        kind="linear", fill_value="extrapolate")
-    f_anchor2 = interp1d(sweep["a2_means"], cf_pct,
-                        kind="linear", fill_value="extrapolate")
-
-    # Find π where predicted mean = observed
-    implied_pi_1 = f_anchor1(timeline.anchor_1_events)
-    implied_pi_2 = f_anchor2(timeline.anchor_2_events)
-
-    print(f"Implied π from anchor 1 (mo46): {implied_pi_1:.1f}%")
-    print(f"Implied π from anchor 2 (mo58): {implied_pi_2:.1f}%")
-    print(f"Average implied π: {(implied_pi_1 + implied_pi_2)/2:.1f}%")
-
-    # Plot everything
-    plot_simulation_results(mc, sweep, p, timeline, cure_fraction, single)
+    # Plot — pass needed_cure_fraction everywhere
+    plot_simulation_results(mc, sweep, p, timeline, needed_cure_fraction, single)
     print("=" * 60)
