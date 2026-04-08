@@ -18,8 +18,6 @@ gives a distribution of expected event counts at each calendar anchor,
 which we compare to the observed SEC-filed counts to assess whether
 our cure fraction estimate is consistent with reality.
 
-Dependencies: numpy, scipy, matplotlib
-    pip install numpy scipy matplotlib
 """
 
 import numpy as np
@@ -28,6 +26,8 @@ import matplotlib.gridspec as gridspec
 from dataclasses import dataclass
 from typing import Tuple
 import os
+from scipy.interpolate import interp1d
+
 
 # ── import from main model ──────────────────────────────────────────
 import sys
@@ -401,9 +401,9 @@ def plot_simulation_results(
     ]
     for idx, (lbl, val, col) in enumerate(stats):
         x = 0.02 + idx * 0.163
-        fig.text(x, 0.67, lbl, color=TEXT_DIM, fontsize=7,
+        fig.text(x, 0.66, lbl, color=TEXT_DIM, fontsize=7,
                  fontfamily="monospace", transform=fig.transFigure)
-        fig.text(x, 0.65, val, color=col, fontsize=11,
+        fig.text(x, 0.64, val, color=col, fontsize=11,
                  fontfamily="monospace", fontweight="bold",
                  transform=fig.transFigure)
 
@@ -684,6 +684,22 @@ if __name__ == "__main__":
     cf_range = np.linspace(0.05, 0.45, 9)
     sweep = sweep_cure_fractions(p, timeline, cf_range, n_sims=5_000, seed=42)
     print()
+
+    cf_pct = sweep["cure_fractions"] * 100
+
+    # Interpolate mean predicted events as a function of π
+    f_anchor1 = interp1d(sweep["a1_means"], cf_pct, 
+                        kind="linear", fill_value="extrapolate")
+    f_anchor2 = interp1d(sweep["a2_means"], cf_pct,
+                        kind="linear", fill_value="extrapolate")
+
+    # Find π where predicted mean = observed
+    implied_pi_1 = f_anchor1(timeline.anchor_1_events)
+    implied_pi_2 = f_anchor2(timeline.anchor_2_events)
+
+    print(f"Implied π from anchor 1 (mo46): {implied_pi_1:.1f}%")
+    print(f"Implied π from anchor 2 (mo58): {implied_pi_2:.1f}%")
+    print(f"Average implied π: {(implied_pi_1 + implied_pi_2)/2:.1f}%")
 
     # Plot everything
     plot_simulation_results(mc, sweep, p, timeline, cure_fraction, single)
