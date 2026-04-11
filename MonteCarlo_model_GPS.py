@@ -668,7 +668,7 @@ if __name__ == "__main__":
     print(f"  Implied π from anchor 1 (mo46): {implied_pi_1:.1f}%")
     print(f"  Implied π from anchor 2 (mo58): {implied_pi_2:.1f}%")
     print(f"  Average implied π:              {needed_cure_fraction*100:.1f}%")
-
+    
     # ── Step 2: Everything else uses needed_cure_fraction ──────────
     print("=" * 60)
     print("  GPS · REGAL · Monte Carlo Enrollment Simulation")
