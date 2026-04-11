@@ -84,7 +84,7 @@ def compute_aggregate_cure_fraction(p: ModelParams) -> float:
     """
     cd8_cure = p.hla_positive_rate * p.cd8_response_rate * p.cure_fraction_responders
     hla_negative_cure = p.cd4_response_rate * p.hla_neg_pop * p.cure_fraction_hla_neg
-    return min(cd8_cure + hla_negative_cure, 0.45)
+    return min(cd8_cure + hla_negative_cure, 0.7)
 
 
 # ─────────────────────────────────────────────
