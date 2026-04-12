@@ -225,6 +225,17 @@ def simulate_trial(
     )
     follow_up = np.maximum(follow_up, 0)
 
+    # Empirical HR estimate: rate ratio (GPS events/time) / (BAT events/time)
+    gps_mask_arms = arms == "GPS"
+    events_gps = np.sum(had_event[gps_mask_arms])
+    events_bat = np.sum(had_event[~gps_mask_arms])
+    time_gps   = np.sum(follow_up[gps_mask_arms])
+    time_bat   = np.sum(follow_up[~gps_mask_arms])
+    if events_gps > 0 and events_bat > 0 and time_gps > 0 and time_bat > 0:
+        hr = (events_gps / time_gps) / (events_bat / time_bat)
+    else:
+        hr = np.nan
+
     return {
         "enrollment_times":         enroll_times,
         "arms":                     arms,
@@ -237,6 +248,7 @@ def simulate_trial(
         "month_of_80th_event":      month_80,
         "n_gps":                    n_gps,
         "n_bat":                    n_bat,
+        "hr":                       hr,
     }
 
 
@@ -260,6 +272,7 @@ def run_monte_carlo(
     anchor_1_counts = np.zeros(n_sims, dtype=int)
     anchor_2_counts = np.zeros(n_sims, dtype=int)
     month_80_vals   = np.zeros(n_sims)
+    hr_vals         = np.zeros(n_sims)
 
     print(f"  Running {n_sims:,} simulations...", end="", flush=True)
 
@@ -268,6 +281,7 @@ def run_monte_carlo(
         anchor_1_counts[i] = result["n_at_anchor_1"]
         anchor_2_counts[i] = result["n_at_anchor_2"]
         month_80_vals[i]   = result["month_of_80th_event"]
+        hr_vals[i]         = result["hr"]
 
         if (i + 1) % 2000 == 0:
             print(f" {i+1//1000}k", end="", flush=True)
@@ -285,6 +299,9 @@ def run_monte_carlo(
 
     # Filter inf for month_80 stats
     finite_80 = month_80_vals[np.isfinite(month_80_vals)]
+
+    # HR stats (drop NaNs)
+    finite_hr = hr_vals[np.isfinite(hr_vals)]
 
     return {
         "anchor_1_counts":  anchor_1_counts,
@@ -306,6 +323,13 @@ def run_monte_carlo(
         "m80_median": np.median(finite_80) if len(finite_80) > 0 else np.nan,
         "m80_ci":     np.percentile(finite_80, [2.5, 97.5]) if len(finite_80) > 0 else [np.nan, np.nan],
         "pct_reached_80": len(finite_80) / len(month_80_vals) * 100,
+        # HR statistics
+        "hr_vals":   finite_hr,
+        "hr_median": np.median(finite_hr) if len(finite_hr) > 0 else np.nan,
+        "hr_std":    np.std(finite_hr)    if len(finite_hr) > 0 else np.nan,
+        "hr_min":    np.min(finite_hr)    if len(finite_hr) > 0 else np.nan,
+        "hr_max":    np.max(finite_hr)    if len(finite_hr) > 0 else np.nan,
+        "hr_ci":     np.percentile(finite_hr, [2.5, 97.5]) if len(finite_hr) > 0 else [np.nan, np.nan],
     }
 
 
@@ -373,7 +397,7 @@ def plot_simulation_results(
     cure_fraction: float,
     single_trial: dict
 ):
-    fig = plt.figure(figsize=(18, 13), facecolor=DARK_BG)
+    fig = plt.figure(figsize=(23, 13), facecolor=DARK_BG)
     fig.suptitle(
         "GPS · REGAL  |  Monte Carlo Enrollment Simulation",
         color=TEXT_HI, fontsize=16, fontfamily="monospace", y=0.98, x=0.02, ha="left"
@@ -383,9 +407,9 @@ def plot_simulation_results(
              f"Enrollment Jan 2020 – Jun 2022  ·  Anchors: 60@mo46, 72@mo58",
              color=TEXT_DIM, fontsize=9, fontfamily="monospace")
 
-    gs = gridspec.GridSpec(3, 3, figure=fig,
+    gs = gridspec.GridSpec(3, 4, figure=fig,
                            hspace=0.45, wspace=0.35,
-                           left=0.06, right=0.97, top=0.93, bottom=0.06)
+                           left=0.05, right=0.98, top=0.93, bottom=0.06)
 
     # ── Stat banner ──────────────────────────────────────────────────
     obs_in_ci_1 = mc["a1_ci"][0] <= timeline.anchor_1_events <= mc["a1_ci"][1]
@@ -560,7 +584,7 @@ def plot_simulation_results(
     style_ax(ax6, "CURE FRACTION SWEEP  ·  Which π fits the anchors?")
 
     # ── Panel 7: Follow-up distribution (single sim) ──────────────────
-    ax7 = fig.add_subplot(gs[2, :2])
+    ax7 = fig.add_subplot(gs[2, :2])  # cols 0-1
     gps_fu = single_trial["follow_up"][gps_mask]
     bat_fu = single_trial["follow_up"][~gps_mask]
 
@@ -617,6 +641,40 @@ def plot_simulation_results(
                  fontweight="bold" if bold else "normal",
                  transform=ax8.transAxes)
         y -= 0.055
+
+    # ── Panel 9: HR statistics ────────────────────────────────────────
+    ax9 = fig.add_subplot(gs[2, 3])  # col 3
+    ax9.set_facecolor(PANEL_BG)
+    ax9.axis("off")
+    for spine in ax9.spines.values():
+        spine.set_edgecolor(GRID_COL)
+
+    hr_lines = [
+        ("HAZARD RATIO STATS", TEXT_MID, 10, True),
+        ("(GPS vs BAT, rate ratio)", TEXT_DIM, 7, False),
+        ("", TEXT_DIM, 8, False),
+        (f"Median HR",               TEXT_DIM, 8, False),
+        (f"  {mc['hr_median']:.3f}",  BLUE,     11, True),
+        ("", TEXT_DIM, 8, False),
+        (f"Std Dev",                  TEXT_DIM, 8, False),
+        (f"  ±{mc['hr_std']:.3f}",    TEXT_MID, 9, False),
+        ("", TEXT_DIM, 8, False),
+        (f"Low  (min)",               TEXT_DIM, 8, False),
+        (f"  {mc['hr_min']:.3f}",     GREEN,    9, False),
+        ("", TEXT_DIM, 8, False),
+        (f"High (max)",               TEXT_DIM, 8, False),
+        (f"  {mc['hr_max']:.3f}",     RED,      9, False),
+        ("", TEXT_DIM, 8, False),
+        (f"95% CI",                   TEXT_DIM, 8, False),
+        (f"  [{mc['hr_ci'][0]:.3f}, {mc['hr_ci'][1]:.3f}]", AMBER, 9, False),
+    ]
+    y9 = 0.95
+    for text, color, size, bold in hr_lines:
+        ax9.text(0.08, y9, text, color=color, fontsize=size,
+                 fontfamily="monospace",
+                 fontweight="bold" if bold else "normal",
+                 transform=ax9.transAxes)
+        y9 -= 0.055
 
     out_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
