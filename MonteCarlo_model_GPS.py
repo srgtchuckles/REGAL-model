@@ -225,16 +225,39 @@ def simulate_trial(
     )
     follow_up = np.maximum(follow_up, 0)
 
-    # Empirical HR estimate: rate ratio (GPS events/time) / (BAT events/time)
+    # Mantel-Haenszel HR estimate (GPS vs BAT).
+    # At each observed event time we compare GPS vs BAT risk sets — this avoids
+    # the cured-patient person-time inflation that makes a simple rate ratio too low.
     gps_mask_arms = arms == "GPS"
-    events_gps = np.sum(had_event[gps_mask_arms])
-    events_bat = np.sum(had_event[~gps_mask_arms])
-    time_gps   = np.sum(follow_up[gps_mask_arms])
-    time_bat   = np.sum(follow_up[~gps_mask_arms])
-    if events_gps > 0 and events_bat > 0 and time_gps > 0 and time_bat > 0:
-        hr = (events_gps / time_gps) / (events_bat / time_bat)
-    else:
+    gps_fu = follow_up[gps_mask_arms]
+    bat_fu = follow_up[~gps_mask_arms]
+    gps_ev = had_event[gps_mask_arms]
+    bat_ev = had_event[~gps_mask_arms]
+
+    gps_event_times = gps_fu[gps_ev]
+    bat_event_times = bat_fu[bat_ev]
+    all_event_times = np.concatenate([gps_event_times, bat_event_times])
+    unique_times = np.unique(all_event_times)
+
+    if len(unique_times) == 0:
         hr = np.nan
+    else:
+        sorted_gps = np.sort(gps_fu)
+        sorted_bat = np.sort(bat_fu)
+        n_gps_at_risk = len(gps_fu) - np.searchsorted(sorted_gps, unique_times, side="left")
+        n_bat_at_risk = len(bat_fu) - np.searchsorted(sorted_bat, unique_times, side="left")
+        n_total = n_gps_at_risk + n_bat_at_risk
+
+        # Deaths per unique time via index mapping
+        d_gps = np.zeros(len(unique_times), dtype=int)
+        d_bat = np.zeros(len(unique_times), dtype=int)
+        np.add.at(d_gps, np.searchsorted(unique_times, gps_event_times), 1)
+        np.add.at(d_bat, np.searchsorted(unique_times, bat_event_times), 1)
+
+        valid = n_total > 1
+        mh_num = np.sum(d_gps[valid] * n_bat_at_risk[valid] / n_total[valid])
+        mh_den = np.sum(d_bat[valid] * n_gps_at_risk[valid] / n_total[valid])
+        hr = mh_num / mh_den if mh_den > 0 else np.nan
 
     return {
         "enrollment_times":         enroll_times,
