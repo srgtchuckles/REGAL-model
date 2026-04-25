@@ -106,13 +106,15 @@ def sample_patient_event_time(
         float: months from enrollment to event (inf = cured / no event)
     """
     if arm == "GPS":
-        # First determine if patient is in the cured fraction
         if rng.uniform() < cure_fraction:
-            return np.inf  # cured — will never have the event
+            return np.inf
         else:
             return sample_weibull_time(p.gps_median_os, p.gps_weibull_shape, rng)
-    else:  # BAT — no cure fraction
-        return sample_weibull_time(p.bat_median_os, p.bat_weibull_shape, rng)
+    else:  # BAT — small cure fraction from allo-SCT long-term survivors
+        if rng.uniform() < p.bat_cure_fraction:
+            return np.inf
+        else:
+            return sample_weibull_time(p.bat_median_os, p.bat_weibull_shape, rng)
 
 
 # ─────────────────────────────────────────────
@@ -225,39 +227,33 @@ def simulate_trial(
     )
     follow_up = np.maximum(follow_up, 0)
 
-    # Mantel-Haenszel HR estimate (GPS vs BAT).
-    # At each observed event time we compare GPS vs BAT risk sets — this avoids
-    # the cured-patient person-time inflation that makes a simple rate ratio too low.
     gps_mask_arms = arms == "GPS"
-    gps_fu = follow_up[gps_mask_arms]
-    bat_fu = follow_up[~gps_mask_arms]
-    gps_ev = had_event[gps_mask_arms]
-    bat_ev = had_event[~gps_mask_arms]
+    n_gps_events  = int(np.sum(had_event[gps_mask_arms]))
+    n_bat_events  = int(np.sum(had_event[~gps_mask_arms]))
 
-    gps_event_times = gps_fu[gps_ev]
-    bat_event_times = bat_fu[bat_ev]
-    all_event_times = np.concatenate([gps_event_times, bat_event_times])
-    unique_times = np.unique(all_event_times)
+    # Mantel-Haenszel HR (GPS vs BAT)
+    gps_fu         = follow_up[gps_mask_arms]
+    bat_fu         = follow_up[~gps_mask_arms]
+    gps_event_times = gps_fu[had_event[gps_mask_arms]]
+    bat_event_times = bat_fu[had_event[~gps_mask_arms]]
+    unique_times    = np.unique(np.concatenate([gps_event_times, bat_event_times]))
 
     if len(unique_times) == 0:
         hr = np.nan
     else:
-        sorted_gps = np.sort(gps_fu)
-        sorted_bat = np.sort(bat_fu)
+        sorted_gps    = np.sort(gps_fu)
+        sorted_bat    = np.sort(bat_fu)
         n_gps_at_risk = len(gps_fu) - np.searchsorted(sorted_gps, unique_times, side="left")
         n_bat_at_risk = len(bat_fu) - np.searchsorted(sorted_bat, unique_times, side="left")
-        n_total = n_gps_at_risk + n_bat_at_risk
-
-        # Deaths per unique time via index mapping
+        n_total       = n_gps_at_risk + n_bat_at_risk
         d_gps = np.zeros(len(unique_times), dtype=int)
         d_bat = np.zeros(len(unique_times), dtype=int)
         np.add.at(d_gps, np.searchsorted(unique_times, gps_event_times), 1)
         np.add.at(d_bat, np.searchsorted(unique_times, bat_event_times), 1)
-
-        valid = n_total > 1
-        mh_num = np.sum(d_gps[valid] * n_bat_at_risk[valid] / n_total[valid])
-        mh_den = np.sum(d_bat[valid] * n_gps_at_risk[valid] / n_total[valid])
-        hr = mh_num / mh_den if mh_den > 0 else np.nan
+        valid   = n_total > 1
+        mh_num  = np.sum(d_gps[valid] * n_bat_at_risk[valid] / n_total[valid])
+        mh_den  = np.sum(d_bat[valid] * n_gps_at_risk[valid] / n_total[valid])
+        hr      = mh_num / mh_den if mh_den > 0 else np.nan
 
     return {
         "enrollment_times":         enroll_times,
@@ -271,6 +267,8 @@ def simulate_trial(
         "month_of_80th_event":      month_80,
         "n_gps":                    n_gps,
         "n_bat":                    n_bat,
+        "n_gps_events":             n_gps_events,
+        "n_bat_events":             n_bat_events,
         "hr":                       hr,
     }
 
@@ -295,6 +293,8 @@ def run_monte_carlo(
     anchor_1_counts = np.zeros(n_sims, dtype=int)
     anchor_2_counts = np.zeros(n_sims, dtype=int)
     month_80_vals   = np.zeros(n_sims)
+    gps_event_pcts  = np.zeros(n_sims)
+    bat_event_pcts  = np.zeros(n_sims)
     hr_vals         = np.zeros(n_sims)
 
     print(f"  Running {n_sims:,} simulations...", end="", flush=True)
@@ -304,6 +304,8 @@ def run_monte_carlo(
         anchor_1_counts[i] = result["n_at_anchor_1"]
         anchor_2_counts[i] = result["n_at_anchor_2"]
         month_80_vals[i]   = result["month_of_80th_event"]
+        gps_event_pcts[i]  = result["n_gps_events"] / result["n_gps"] * 100
+        bat_event_pcts[i]  = result["n_bat_events"] / result["n_bat"] * 100
         hr_vals[i]         = result["hr"]
 
         if (i + 1) % 2000 == 0:
@@ -322,9 +324,6 @@ def run_monte_carlo(
 
     # Filter inf for month_80 stats
     finite_80 = month_80_vals[np.isfinite(month_80_vals)]
-
-    # HR stats (drop NaNs)
-    finite_hr = hr_vals[np.isfinite(hr_vals)]
 
     return {
         "anchor_1_counts":  anchor_1_counts,
@@ -346,13 +345,14 @@ def run_monte_carlo(
         "m80_median": np.median(finite_80) if len(finite_80) > 0 else np.nan,
         "m80_ci":     np.percentile(finite_80, [2.5, 97.5]) if len(finite_80) > 0 else [np.nan, np.nan],
         "pct_reached_80": len(finite_80) / len(month_80_vals) * 100,
-        # HR statistics
-        "hr_vals":   finite_hr,
-        "hr_median": np.median(finite_hr) if len(finite_hr) > 0 else np.nan,
-        "hr_std":    np.std(finite_hr)    if len(finite_hr) > 0 else np.nan,
-        "hr_min":    np.min(finite_hr)    if len(finite_hr) > 0 else np.nan,
-        "hr_max":    np.max(finite_hr)    if len(finite_hr) > 0 else np.nan,
-        "hr_ci":     np.percentile(finite_hr, [2.5, 97.5]) if len(finite_hr) > 0 else [np.nan, np.nan],
+        # Arm event rates
+        "gps_event_pct_median": np.median(gps_event_pcts),
+        "gps_event_pct_ci":     np.percentile(gps_event_pcts, [2.5, 97.5]),
+        "bat_event_pct_median": np.median(bat_event_pcts),
+        "bat_event_pct_ci":     np.percentile(bat_event_pcts, [2.5, 97.5]),
+        # HR
+        "hr_median": np.median(hr_vals[np.isfinite(hr_vals)]),
+        "hr_ci":     np.percentile(hr_vals[np.isfinite(hr_vals)], [2.5, 97.5]),
     }
 
 
@@ -665,39 +665,47 @@ def plot_simulation_results(
                  transform=ax8.transAxes)
         y -= 0.055
 
-    # ── Panel 9: HR statistics ────────────────────────────────────────
+    # ── Panel 9: Arm comparison ───────────────────────────────────────
     ax9 = fig.add_subplot(gs[2, 3])  # col 3
     ax9.set_facecolor(PANEL_BG)
     ax9.axis("off")
     for spine in ax9.spines.values():
         spine.set_edgecolor(GRID_COL)
 
-    hr_lines = [
-        ("HAZARD RATIO STATS", TEXT_MID, 10, True),
-        ("(GPS vs BAT, rate ratio)", TEXT_DIM, 7, False),
+    t_eval = np.array([36.0, 48.0, 60.0])
+    s_gps  = mixture_cure_survival(t_eval, cure_fraction, p.gps_median_os, p.gps_weibull_shape)
+    s_bat  = weibull_survival(t_eval, p.bat_median_os, p.bat_weibull_shape)
+
+    arm_lines = [
+        ("ARM COMPARISON", TEXT_MID, 10, True),
+        ("(across 10k sims, by calendar cutoff)", TEXT_DIM, 7, False),
         ("", TEXT_DIM, 8, False),
-        (f"Median HR",               TEXT_DIM, 8, False),
-        (f"  {mc['hr_median']:.3f}",  BLUE,     11, True),
+        ("Median HR  (GPS vs BAT)",   TEXT_DIM, 8, False),
+        (f"  {mc['hr_median']:.3f}  "
+         f"[{mc['hr_ci'][0]:.3f}–{mc['hr_ci'][1]:.3f}]",
+         BLUE, 10, True),
         ("", TEXT_DIM, 8, False),
-        (f"Std Dev",                  TEXT_DIM, 8, False),
-        (f"  ±{mc['hr_std']:.3f}",    TEXT_MID, 9, False),
+        ("GPS  % died by cutoff",    TEXT_DIM, 8, False),
+        (f"  {mc['gps_event_pct_median']:.1f}%  "
+         f"[{mc['gps_event_pct_ci'][0]:.1f}–{mc['gps_event_pct_ci'][1]:.1f}%]",
+         BLUE, 9, False),
+        ("BAT  % died by cutoff",    TEXT_DIM, 8, False),
+        (f"  {mc['bat_event_pct_median']:.1f}%  "
+         f"[{mc['bat_event_pct_ci'][0]:.1f}–{mc['bat_event_pct_ci'][1]:.1f}%]",
+         ORANGE, 9, False),
         ("", TEXT_DIM, 8, False),
-        (f"Low  (min)",               TEXT_DIM, 8, False),
-        (f"  {mc['hr_min']:.3f}",     GREEN,    9, False),
-        ("", TEXT_DIM, 8, False),
-        (f"High (max)",               TEXT_DIM, 8, False),
-        (f"  {mc['hr_max']:.3f}",     RED,      9, False),
-        ("", TEXT_DIM, 8, False),
-        (f"95% CI",                   TEXT_DIM, 8, False),
-        (f"  [{mc['hr_ci'][0]:.3f}, {mc['hr_ci'][1]:.3f}]", AMBER, 9, False),
+        ("Predicted OS (from enrollment)", TEXT_DIM, 8, False),
+        (f"  36mo  GPS {s_gps[0]*100:.1f}%   BAT {s_bat[0]*100:.1f}%", TEXT_MID, 8, False),
+        (f"  48mo  GPS {s_gps[1]*100:.1f}%   BAT {s_bat[1]*100:.1f}%", TEXT_MID, 8, False),
+        (f"  60mo  GPS {s_gps[2]*100:.1f}%   BAT {s_bat[2]*100:.1f}%", TEXT_MID, 8, False),
     ]
     y9 = 0.95
-    for text, color, size, bold in hr_lines:
+    for text, color, size, bold in arm_lines:
         ax9.text(0.08, y9, text, color=color, fontsize=size,
                  fontfamily="monospace",
                  fontweight="bold" if bold else "normal",
                  transform=ax9.transAxes)
-        y9 -= 0.055
+        y9 -= 0.065
 
     out_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),

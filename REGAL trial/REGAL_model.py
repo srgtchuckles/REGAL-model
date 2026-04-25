@@ -25,13 +25,14 @@ class ModelParams:
     cd8_response_rate: float = 0.86        # 6/7 HLA-A*02+ tested → CD8+ response (Phase 2)
     cd4_response_rate: float = 0.44        # 4/9 patients → CD4+ response (Phase 2)
     hla_neg_pop: float = 0.55              # 
-    cure_fraction_responders: float = 0.575 # ~57.5% DFS plateau in immunologic responders (Fig 5)
-    cure_fraction_hla_neg: float = 0.3
+    cure_fraction_responders: float = 0.38  # conservative DFS plateau in immunologic responders
+    cure_fraction_hla_neg: float = 0.15    # lowered from 0.30 — HLA-neg benefit is speculative
     hla_neg_cure_fraction: float = 0.025   # Small residual cure via non-A*02 MHC I + CD4 epitopes
 
-    # BAT arm — historical AML CR2 (not eligible for transplant)
-    bat_median_os: float = 12.0           # months; literature range 8–16mo
+    # BAT arm — AML CR2 including allo-SCT eligible patients
+    bat_median_os: float = 12.0            # months for susceptible (non-allo-SCT-cured) BAT patients
     bat_weibull_shape: float = 1.2         # k > 1 = increasing hazard (appropriate for AML)
+    bat_cure_fraction: float = 0.12        # ~12% long-term survivors via allo-SCT (~35% get SCT × ~35% cure)
 
     # GPS arm — non-cured susceptible subpopulation
     gps_median_os: float = 20.0            # months for non-cured GPS patients
