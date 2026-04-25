@@ -1,0 +1,27 @@
+# Ignore everything at the home directory level by default
+/*
+
+# Except the files we actually want to track
+!.gitignore
+!REGAL trial/
+!Desktop/
+
+# Within Desktop, only the vault
+Desktop/*
+!Desktop/Zach's Valut/
+
+# Within the vault, exclude Obsidian internals and system files
+Desktop/Zach's Valut/.obsidian/
+Desktop/Zach's Valut/.DS_Store
+
+# Ignore Python cache everywhere
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+# Ignore generated output images (large, reproducible)
+REGAL trial/gps_model_output.png
+REGAL trial/monte_carlo_output.png
+
+# Ignore DS_Store everywhere
+**/.DS_Store
