@@ -8,7 +8,7 @@ Master catalog of all wiki pages. Updated by LLM on every ingest or major change
 
 | Page | Description |
 |------|-------------|
-| [[overview]] | Evolving outcome prediction thesis — base case ~40–65% probability GPS meets primary endpoint |
+| [[overview]] | Evolving outcome prediction thesis — updated May 2026; 60–75% probability GPS meets primary endpoint; final analysis imminent (78/80 events) |
 
 ---
 
@@ -17,6 +17,8 @@ Master catalog of all wiki pages. Updated by LLM on every ingest or major change
 | Page | Description |
 |------|-------------|
 | [[sources/prior-claude-session-apr2026]] | Apr 4–5 2026 Claude session: Phase 2 immunologic data, HLA analysis, mixture cure model built |
+| [[sources/confident-web-7118-regal-dd-feb2026]] | Feb 2026 retail DD post: 72-event anchor (Dec 26, 2025), velocity proof, N=126 confirmed, IDMC "continue without modification" |
+| [[sources/sellas-10q-q1-2026]] | SELLAS Q1 2026 10-Q (filed May 12, 2026): **78/80 events** as of May 11, 2026; BLA prep spend; financials ($114.6M cash) |
 
 ---
 
@@ -25,10 +27,10 @@ Master catalog of all wiki pages. Updated by LLM on every ingest or major change
 | Page | Description |
 |------|-------------|
 | [[entities/gps]] | Galinpepimut-S — mechanism, HLA restriction, Phase 2 immunologic correlate data |
-| [[entities/regal-trial]] | REGAL Phase 3 trial — design, event count anchors (60@mo46, 72@mo58), open questions |
+| [[entities/regal-trial]] | REGAL Phase 3 trial — 78/80 events (May 11, 2026); event velocity table; IDMC history; design details |
 | [[entities/aml-cr2]] | AML second complete remission — patient population context |
 | [[entities/bat-arm]] | Best Available Therapy comparator — allo-SCT problem, unmodeled cure fraction risk |
-| [[entities/sellas]] | Sellas Life Sciences — corporate context |
+| [[entities/sellas]] | Sellas Life Sciences — financials ($114.6M cash), BLA prep signal, SLS009 status, 3DMed arbitration |
 
 ---
 
