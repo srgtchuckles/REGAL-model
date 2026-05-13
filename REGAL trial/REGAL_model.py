@@ -14,9 +14,7 @@ from scipy.special import erf
 from dataclasses import dataclass
 
 
-# ─────────────────────────────────────────────
 # Parameters
-# ─────────────────────────────────────────────
 
 @dataclass
 class ModelParams:
@@ -30,7 +28,7 @@ class ModelParams:
     hla_neg_cure_fraction: float = 0.025   # Small residual cure via non-A*02 MHC I + CD4 epitopes
 
     # BAT arm — AML CR2 including allo-SCT eligible patients
-    bat_median_os: float = 12.0            # months for susceptible (non-allo-SCT-cured) BAT patients
+    bat_median_os: float = 14.0            # months for susceptible (non-allo-SCT-cured) BAT patients
     bat_weibull_shape: float = 1.2         # k > 1 = increasing hazard (appropriate for AML)
     bat_cure_fraction: float = 0.12        # ~12% long-term survivors via allo-SCT (~35% get SCT × ~35% cure)
 
@@ -39,13 +37,11 @@ class ModelParams:
     gps_weibull_shape: float = 1.3
 
     # Trial
-    n_patients: int = 116
-    follow_up_months: int = 72
+    n_patients: int = 132          # 125–140 enrolled per 10-Q; midpoint ~132
+    follow_up_months: int = 84
 
 
-# ─────────────────────────────────────────────
 # Survival Functions
-# ─────────────────────────────────────────────
 
 def weibull_lambda(median_os: float, shape: float) -> float:
     """Scale parameter from median and shape."""
@@ -88,9 +84,7 @@ def compute_aggregate_cure_fraction(p: ModelParams) -> float:
     return min(cd8_cure + hla_negative_cure, 0.7)
 
 
-# ─────────────────────────────────────────────
 # Hazard Rate (instantaneous)
-# ─────────────────────────────────────────────
 
 def weibull_hazard(t: np.ndarray, median_os: float, shape: float) -> np.ndarray:
     """h(t) = (k/lambda) * (t/lambda)^(k-1)"""
@@ -116,9 +110,7 @@ def mixture_cure_hazard(
     return np.where(s_mix > 1e-9, (1 - cure_fraction) * f_sus / s_mix, 0.0)
 
 
-# ─────────────────────────────────────────────
 # Event Velocity (6-month windows)
-# ─────────────────────────────────────────────
 
 def event_velocity(
     t: np.ndarray,
@@ -140,9 +132,7 @@ def event_velocity(
     return starts, np.array(counts)
 
 
-# ─────────────────────────────────────────────
 # Approximate Log-Rank Statistics
-# ─────────────────────────────────────────────
 
 def approximate_hazard_ratio(
     p: ModelParams,
@@ -173,9 +163,7 @@ def approximate_pvalue(hr: float, n_events: int) -> float:
     return min(1 - normal_cdf(z), 0.5)
 
 
-# ─────────────────────────────────────────────
 # Sensitivity Analysis
-# ─────────────────────────────────────────────
 
 def sensitivity_analysis(base_params: ModelParams):
     """
@@ -205,9 +193,7 @@ def sensitivity_analysis(base_params: ModelParams):
     return bat_range, cure_range, hr_grid, pval_grid
 
 
-# ─────────────────────────────────────────────
 # Plotting
-# ─────────────────────────────────────────────
 
 DARK_BG   = "#060f1e"
 PANEL_BG  = "#0a1628"
@@ -415,9 +401,7 @@ def plot_model(p: ModelParams = None):
     return fig
 
 
-# ─────────────────────────────────────────────
 # Main
-# ─────────────────────────────────────────────
 
 if __name__ == "__main__":
     p = ModelParams()

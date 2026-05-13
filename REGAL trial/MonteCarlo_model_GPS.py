@@ -29,7 +29,7 @@ import os
 from scipy.interpolate import interp1d
 
 
-# ── import from main model ──────────────────────────────────────────
+# ── import from main model 
 import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from REGAL_model import (
@@ -40,7 +40,7 @@ from REGAL_model import (
     compute_aggregate_cure_fraction,
 )
 
-# ── cosmetics (match main model) ────────────────────────────────────
+# ── cosmetics (match main model) 
 DARK_BG   = "#060f1e"
 PANEL_BG  = "#0a1628"
 GRID_COL  = "#0f2035"
@@ -55,22 +55,22 @@ RED       = "#ef4444"
 PURPLE    = "#a855f7"
 
 
-# ─────────────────────────────────────────────
 # Trial Timeline Parameters
-# ─────────────────────────────────────────────
 
 @dataclass
 class TrialTimeline:
     # Calendar months from trial start (Jan 2020 = month 0)
     enrollment_start: float = 0.0      # Jan 2020
-    enrollment_end: float   = 30.0     # ~Jun 2022 (estimated ~2.5yr accrual)
-    calendar_cutoff: float  = 72.0     # ~Jan 2026 (6yr from start)
+    enrollment_end: float   = 50.0     # Mar 2024 (confirmed per 10-Q)
+    calendar_cutoff: float  = 84.0     # ~Jan 2027 (extended to capture final analysis)
 
     # SEC-filed event count anchors (calendar months from trial start)
-    anchor_1_month:  float = 46.0      # Nov 2023
+    anchor_1_month:  float = 59.0      # Dec 2024 — interim analysis trigger
     anchor_1_events: int   = 60        # observed deaths
-    anchor_2_month:  float = 58.0      # Nov 2024
+    anchor_2_month:  float = 72.0      # Dec 2025 — Confident Web filing
     anchor_2_events: int   = 72        # observed deaths
+    anchor_3_month:  float = 76.0      # May 2026 — SELLAS 10-Q Q1 2026
+    anchor_3_events: int   = 78        # observed deaths
 
     # Final analysis trigger
     final_analysis_events: int = 80
@@ -79,9 +79,7 @@ class TrialTimeline:
     gps_fraction: float = 0.50         # 1:1 randomization
 
 
-# ─────────────────────────────────────────────
 # Patient-Level Event Time Sampling
-# ─────────────────────────────────────────────
 
 def sample_weibull_time(median_os: float, shape: float, rng: np.random.Generator) -> float:
     """
@@ -117,9 +115,7 @@ def sample_patient_event_time(
             return sample_weibull_time(p.bat_median_os, p.bat_weibull_shape, rng)
 
 
-# ─────────────────────────────────────────────
 # Enrollment Distribution
-# ─────────────────────────────────────────────
 
 def sample_enrollment_times(
     n_patients: int,
@@ -155,9 +151,7 @@ def sample_enrollment_times(
     return np.sort(times + timeline.enrollment_start)
 
 
-# ─────────────────────────────────────────────
 # Single Trial Simulation
-# ─────────────────────────────────────────────
 
 def simulate_trial(
     p: ModelParams,
@@ -213,6 +207,7 @@ def simulate_trial(
 
     n_at_anchor_1 = events_by_month(timeline.anchor_1_month)
     n_at_anchor_2 = events_by_month(timeline.anchor_2_month)
+    n_at_anchor_3 = events_by_month(timeline.anchor_3_month)
 
     # Month of 80th event
     if len(event_calendar_times) >= timeline.final_analysis_events:
@@ -264,6 +259,7 @@ def simulate_trial(
         "follow_up":                follow_up,
         "n_at_anchor_1":            n_at_anchor_1,
         "n_at_anchor_2":            n_at_anchor_2,
+        "n_at_anchor_3":            n_at_anchor_3,
         "month_of_80th_event":      month_80,
         "n_gps":                    n_gps,
         "n_bat":                    n_bat,
@@ -273,9 +269,7 @@ def simulate_trial(
     }
 
 
-# ─────────────────────────────────────────────
 # Monte Carlo Runner
-# ─────────────────────────────────────────────
 
 def run_monte_carlo(
     p: ModelParams,
@@ -292,6 +286,7 @@ def run_monte_carlo(
 
     anchor_1_counts = np.zeros(n_sims, dtype=int)
     anchor_2_counts = np.zeros(n_sims, dtype=int)
+    anchor_3_counts = np.zeros(n_sims, dtype=int)
     month_80_vals   = np.zeros(n_sims)
     gps_event_pcts  = np.zeros(n_sims)
     bat_event_pcts  = np.zeros(n_sims)
@@ -303,6 +298,7 @@ def run_monte_carlo(
         result = simulate_trial(p, timeline, cure_fraction, rng, enrollment_pattern)
         anchor_1_counts[i] = result["n_at_anchor_1"]
         anchor_2_counts[i] = result["n_at_anchor_2"]
+        anchor_3_counts[i] = result["n_at_anchor_3"]
         month_80_vals[i]   = result["month_of_80th_event"]
         gps_event_pcts[i]  = result["n_gps_events"] / result["n_gps"] * 100
         bat_event_pcts[i]  = result["n_bat_events"] / result["n_bat"] * 100
@@ -317,10 +313,11 @@ def run_monte_carlo(
     # We want to know if observed counts are consistent with our model
     p_anchor_1 = np.mean(anchor_1_counts >= timeline.anchor_1_events)
     p_anchor_2 = np.mean(anchor_2_counts >= timeline.anchor_2_events)
+    p_anchor_3 = np.mean(anchor_3_counts >= timeline.anchor_3_events)
 
-    # Two-sided consistency: is observed within central 95% of simulated?
     ci_1 = np.percentile(anchor_1_counts, [2.5, 97.5])
     ci_2 = np.percentile(anchor_2_counts, [2.5, 97.5])
+    ci_3 = np.percentile(anchor_3_counts, [2.5, 97.5])
 
     # Filter inf for month_80 stats
     finite_80 = month_80_vals[np.isfinite(month_80_vals)]
@@ -328,6 +325,7 @@ def run_monte_carlo(
     return {
         "anchor_1_counts":  anchor_1_counts,
         "anchor_2_counts":  anchor_2_counts,
+        "anchor_3_counts":  anchor_3_counts,
         "month_80_vals":    month_80_vals,
         "finite_80":        finite_80,
         # Anchor 1
@@ -340,6 +338,11 @@ def run_monte_carlo(
         "a2_median":np.median(anchor_2_counts),
         "a2_ci":    ci_2,
         "a2_p":     p_anchor_2,
+        # Anchor 3
+        "a3_mean":  anchor_3_counts.mean(),
+        "a3_median":np.median(anchor_3_counts),
+        "a3_ci":    ci_3,
+        "a3_p":     p_anchor_3,
         # Month of 80th event
         "m80_mean":   finite_80.mean() if len(finite_80) > 0 else np.nan,
         "m80_median": np.median(finite_80) if len(finite_80) > 0 else np.nan,
@@ -356,9 +359,7 @@ def run_monte_carlo(
     }
 
 
-# ─────────────────────────────────────────────
 # Cure Fraction Sweep
-# ─────────────────────────────────────────────
 
 def sweep_cure_fractions(
     p: ModelParams,
@@ -373,6 +374,7 @@ def sweep_cure_fractions(
     """
     a1_means, a1_cis_lo, a1_cis_hi = [], [], []
     a2_means, a2_cis_lo, a2_cis_hi = [], [], []
+    a3_means, a3_cis_lo, a3_cis_hi = [], [], []
 
     for cf in cure_fractions:
         print(f"  π={cf*100:.0f}%", end=" ")
@@ -383,6 +385,9 @@ def sweep_cure_fractions(
         a2_means.append(mc["a2_mean"])
         a2_cis_lo.append(mc["a2_ci"][0])
         a2_cis_hi.append(mc["a2_ci"][1])
+        a3_means.append(mc["a3_mean"])
+        a3_cis_lo.append(mc["a3_ci"][0])
+        a3_cis_hi.append(mc["a3_ci"][1])
 
     return {
         "cure_fractions": cure_fractions,
@@ -392,12 +397,13 @@ def sweep_cure_fractions(
         "a2_means":   np.array(a2_means),
         "a2_cis_lo":  np.array(a2_cis_lo),
         "a2_cis_hi":  np.array(a2_cis_hi),
+        "a3_means":   np.array(a3_means),
+        "a3_cis_lo":  np.array(a3_cis_lo),
+        "a3_cis_hi":  np.array(a3_cis_hi),
     }
 
 
-# ─────────────────────────────────────────────
 # Plotting
-# ─────────────────────────────────────────────
 
 def style_ax(ax, title=None):
     ax.set_facecolor(PANEL_BG)
@@ -427,24 +433,25 @@ def plot_simulation_results(
     )
     fig.text(0.02, 0.955,
              f"n=10,000 simulations  ·  π={cure_fraction*100:.1f}%  ·  "
-             f"Enrollment Jan 2020 – Jun 2022  ·  Anchors: 60@mo46, 72@mo58",
+             f"Enrollment Jan 2020 – Mar 2024  ·  Anchors: 60@mo59, 72@mo72, 78@mo76",
              color=TEXT_DIM, fontsize=9, fontfamily="monospace")
 
     gs = gridspec.GridSpec(3, 4, figure=fig,
                            hspace=0.45, wspace=0.35,
                            left=0.05, right=0.98, top=0.93, bottom=0.06)
 
-    # ── Stat banner ──────────────────────────────────────────────────
+    # ── Stat banner 
     obs_in_ci_1 = mc["a1_ci"][0] <= timeline.anchor_1_events <= mc["a1_ci"][1]
     obs_in_ci_2 = mc["a2_ci"][0] <= timeline.anchor_2_events <= mc["a2_ci"][1]
+    obs_in_ci_3 = mc["a3_ci"][0] <= timeline.anchor_3_events <= mc["a3_ci"][1]
 
     stats = [
         ("Cure Fraction π",    f"{cure_fraction*100:.1f}%",              BLUE),
-        ("Anchor 1 (mo46)",    f"obs={timeline.anchor_1_events} | sim={mc['a1_mean']:.1f}", GREEN if obs_in_ci_1 else RED),
-        ("Anchor 2 (mo58)",    f"obs={timeline.anchor_2_events} | sim={mc['a2_mean']:.1f}", GREEN if obs_in_ci_2 else RED),
-        ("95% CI mo46",        f"[{mc['a1_ci'][0]:.0f}, {mc['a1_ci'][1]:.0f}]",            GREEN if obs_in_ci_1 else RED),
-        ("95% CI mo58",        f"[{mc['a2_ci'][0]:.0f}, {mc['a2_ci'][1]:.0f}]",            GREEN if obs_in_ci_2 else RED),
+        ("Anchor 1 (mo59)",    f"obs={timeline.anchor_1_events} | sim={mc['a1_mean']:.1f}", GREEN if obs_in_ci_1 else RED),
+        ("Anchor 2 (mo72)",    f"obs={timeline.anchor_2_events} | sim={mc['a2_mean']:.1f}", GREEN if obs_in_ci_2 else RED),
+        ("Anchor 3 (mo76)",    f"obs={timeline.anchor_3_events} | sim={mc['a3_mean']:.1f}", GREEN if obs_in_ci_3 else RED),
         ("80th event (median)",f"mo {mc['m80_median']:.1f}",              AMBER),
+        ("Median HR",          f"{mc['hr_median']:.3f}",                  PURPLE),
     ]
     for idx, (lbl, val, col) in enumerate(stats):
         x = 0.02 + idx * 0.163
@@ -454,7 +461,7 @@ def plot_simulation_results(
                  fontfamily="monospace", fontweight="bold",
                  transform=fig.transFigure)
 
-    # ── Panel 1: Enrollment timeline (single sim) ─────────────────────
+    # ── Panel 1: Enrollment timeline (single sim) 
     ax1 = fig.add_subplot(gs[0, 0])
     gps_mask = single_trial["arms"] == "GPS"
     ax1.hist(single_trial["enrollment_times"][gps_mask],
@@ -469,7 +476,7 @@ def plot_simulation_results(
                labelcolor=TEXT_MID)
     style_ax(ax1, "ENROLLMENT DISTRIBUTION (1 sim)")
 
-    # ── Panel 2: Cumulative events over calendar time (single sim) ────
+    # ── Panel 2: Cumulative events over calendar time (single sim) 
     ax2 = fig.add_subplot(gs[0, 1])
 
     cal_times = single_trial["calendar_event_times"]
@@ -497,8 +504,11 @@ def plot_simulation_results(
                 label=f"mo{timeline.anchor_1_month:.0f}: obs={timeline.anchor_1_events}")
     ax2.axvline(timeline.anchor_2_month, color=AMBER, ls=":", lw=1.5,
                 label=f"mo{timeline.anchor_2_month:.0f}: obs={timeline.anchor_2_events}")
+    ax2.axvline(timeline.anchor_3_month, color=PURPLE, ls=":", lw=1.5,
+                label=f"mo{timeline.anchor_3_month:.0f}: obs={timeline.anchor_3_events}")
     ax2.axhline(timeline.anchor_1_events, color=GREEN, ls=":", lw=0.8, alpha=0.5)
     ax2.axhline(timeline.anchor_2_events, color=AMBER, ls=":", lw=0.8, alpha=0.5)
+    ax2.axhline(timeline.anchor_3_events, color=PURPLE, ls=":", lw=0.8, alpha=0.5)
     ax2.axhline(timeline.final_analysis_events, color=RED, ls="--", lw=1,
                 label=f"Final analysis ({timeline.final_analysis_events} events)")
 
@@ -509,7 +519,7 @@ def plot_simulation_results(
                labelcolor=TEXT_MID, loc="upper left")
     style_ax(ax2, "CUMULATIVE EVENTS OVER TIME (1 sim)")
 
-    # ── Panel 3: Distribution of events at anchor 1 ───────────────────
+    # ── Panel 3: Distribution of events at anchor 1 
     ax3 = fig.add_subplot(gs[0, 2])
     ax3.hist(mc["anchor_1_counts"], bins=30, color=BLUE, alpha=0.8,
              edgecolor=DARK_BG, linewidth=0.3)
@@ -520,7 +530,7 @@ def plot_simulation_results(
     ax3.axvline(mc["a1_ci"][0], color=TEXT_DIM, lw=1, ls=":",
                 label=f"95% CI: [{mc['a1_ci'][0]:.0f}, {mc['a1_ci'][1]:.0f}]")
     ax3.axvline(mc["a1_ci"][1], color=TEXT_DIM, lw=1, ls=":")
-    ax3.set_xlabel("Events at Calendar Month 46")
+    ax3.set_xlabel("Events at Calendar Month 59")
     ax3.set_ylabel("Simulation Count")
     ax3.legend(fontsize=7, facecolor=DARK_BG, edgecolor=GRID_COL,
                labelcolor=TEXT_MID)
@@ -534,7 +544,7 @@ def plot_simulation_results(
     ax3.tick_params(colors=TEXT_DIM, labelsize=8)
     ax3.grid(True, color=GRID_COL, linewidth=0.5, linestyle="--", alpha=0.7)
 
-    # ── Panel 4: Distribution of events at anchor 2 ───────────────────
+    # ── Panel 4: Distribution of events at anchor 2 
     ax4 = fig.add_subplot(gs[1, 0])
     ax4.hist(mc["anchor_2_counts"], bins=30, color=ORANGE, alpha=0.8,
              edgecolor=DARK_BG, linewidth=0.3)
@@ -545,7 +555,7 @@ def plot_simulation_results(
     ax4.axvline(mc["a2_ci"][0], color=TEXT_DIM, lw=1, ls=":")
     ax4.axvline(mc["a2_ci"][1], color=TEXT_DIM, lw=1, ls=":",
                 label=f"95% CI: [{mc['a2_ci'][0]:.0f}, {mc['a2_ci'][1]:.0f}]")
-    ax4.set_xlabel("Events at Calendar Month 58")
+    ax4.set_xlabel("Events at Calendar Month 72")
     ax4.set_ylabel("Simulation Count")
     ax4.legend(fontsize=7, facecolor=DARK_BG, edgecolor=GRID_COL,
                labelcolor=TEXT_MID)
@@ -559,7 +569,31 @@ def plot_simulation_results(
     ax4.tick_params(colors=TEXT_DIM, labelsize=8)
     ax4.grid(True, color=GRID_COL, linewidth=0.5, linestyle="--", alpha=0.7)
 
-    # ── Panel 5: Distribution of month of 80th event ──────────────────
+    # ── Panel 4b: Distribution of events at anchor 3 
+    ax4b = fig.add_subplot(gs[0, 3])
+    ax4b.hist(mc["anchor_3_counts"], bins=30, color=PURPLE, alpha=0.8,
+              edgecolor=DARK_BG, linewidth=0.3)
+    ax4b.axvline(timeline.anchor_3_events, color=GREEN, lw=2.5,
+                 label=f"Observed: {timeline.anchor_3_events}")
+    ax4b.axvline(mc["a3_mean"], color=PURPLE, lw=1.5, ls="--",
+                 label=f"Sim mean: {mc['a3_mean']:.1f}")
+    ax4b.axvline(mc["a3_ci"][0], color=TEXT_DIM, lw=1, ls=":")
+    ax4b.axvline(mc["a3_ci"][1], color=TEXT_DIM, lw=1, ls=":",
+                 label=f"95% CI: [{mc['a3_ci'][0]:.0f}, {mc['a3_ci'][1]:.0f}]")
+    ax4b.set_xlabel("Events at Calendar Month 76")
+    ax4b.set_ylabel("Simulation Count")
+    ax4b.legend(fontsize=7, facecolor=DARK_BG, edgecolor=GRID_COL, labelcolor=TEXT_MID)
+    consistency_3 = "✓ CONSISTENT" if obs_in_ci_3 else "✗ INCONSISTENT"
+    ax4b.set_title(f"ANCHOR 3 VALIDATION  ·  {consistency_3}",
+                   color=GREEN if obs_in_ci_3 else RED,
+                   fontsize=9, fontfamily="monospace", pad=10, loc="left")
+    for spine in ax4b.spines.values():
+        spine.set_edgecolor(GRID_COL)
+    ax4b.set_facecolor(PANEL_BG)
+    ax4b.tick_params(colors=TEXT_DIM, labelsize=8)
+    ax4b.grid(True, color=GRID_COL, linewidth=0.5, linestyle="--", alpha=0.7)
+
+    # ── Panel 5: Distribution of month of 80th event 
     ax5 = fig.add_subplot(gs[1, 1])
     finite_80 = mc["finite_80"]
     if len(finite_80) > 0:
@@ -570,31 +604,37 @@ def plot_simulation_results(
         ax5.axvline(mc["m80_ci"][0], color=TEXT_DIM, lw=1, ls=":")
         ax5.axvline(mc["m80_ci"][1], color=TEXT_DIM, lw=1, ls=":",
                     label=f"95% CI: mo [{mc['m80_ci'][0]:.1f}, {mc['m80_ci'][1]:.1f}]")
-        # Current date marker (mo ~72 = Apr 2026)
-        ax5.axvline(72, color=GREEN, lw=2, ls="--", label="Now (~mo 72)")
+        # Current date marker (mo ~76 = May 2026, per 10-Q)
+        ax5.axvline(76, color=GREEN, lw=2, ls="--", label="Now (~mo 76)")
         ax5.legend(fontsize=7, facecolor=DARK_BG, edgecolor=GRID_COL,
                    labelcolor=TEXT_MID)
     ax5.set_xlabel("Calendar Month of 80th Event")
     ax5.set_ylabel("Simulation Count")
     style_ax(ax5, f"FINAL ANALYSIS TIMING  ·  {mc['pct_reached_80']:.1f}% sims reach 80 events")
 
-    # ── Panel 6: Cure fraction sweep ──────────────────────────────────
+    # ── Panel 6: Cure fraction sweep 
     ax6 = fig.add_subplot(gs[1, 2])
     cf_pct = sweep["cure_fractions"] * 100
 
     ax6.fill_between(cf_pct, sweep["a1_cis_lo"], sweep["a1_cis_hi"],
-                     alpha=0.25, color=BLUE, label="95% CI (mo46)")
-    ax6.plot(cf_pct, sweep["a1_means"], color=BLUE, lw=2, label="Sim mean (mo46)")
+                     alpha=0.25, color=BLUE, label="95% CI (mo59)")
+    ax6.plot(cf_pct, sweep["a1_means"], color=BLUE, lw=2, label="Sim mean (mo59)")
 
     ax6.fill_between(cf_pct, sweep["a2_cis_lo"], sweep["a2_cis_hi"],
-                     alpha=0.25, color=ORANGE, label="95% CI (mo58)")
-    ax6.plot(cf_pct, sweep["a2_means"], color=ORANGE, lw=2, label="Sim mean (mo58)")
+                     alpha=0.25, color=ORANGE, label="95% CI (mo72)")
+    ax6.plot(cf_pct, sweep["a2_means"], color=ORANGE, lw=2, label="Sim mean (mo72)")
+
+    ax6.fill_between(cf_pct, sweep["a3_cis_lo"], sweep["a3_cis_hi"],
+                     alpha=0.25, color=PURPLE, label="95% CI (mo76)")
+    ax6.plot(cf_pct, sweep["a3_means"], color=PURPLE, lw=2, label="Sim mean (mo76)")
 
     # Observed anchor lines
     ax6.axhline(timeline.anchor_1_events, color=BLUE, ls="--", lw=1.5,
-                label=f"Observed mo46={timeline.anchor_1_events}")
+                label=f"Observed mo59={timeline.anchor_1_events}")
     ax6.axhline(timeline.anchor_2_events, color=ORANGE, ls="--", lw=1.5,
-                label=f"Observed mo58={timeline.anchor_2_events}")
+                label=f"Observed mo72={timeline.anchor_2_events}")
+    ax6.axhline(timeline.anchor_3_events, color=PURPLE, ls="--", lw=1.5,
+                label=f"Observed mo76={timeline.anchor_3_events}")
 
     # Mark base cure fraction
     ax6.axvline(cure_fraction * 100, color=GREEN, ls=":", lw=1.5,
@@ -606,7 +646,7 @@ def plot_simulation_results(
                labelcolor=TEXT_MID, loc="upper right")
     style_ax(ax6, "CURE FRACTION SWEEP  ·  Which π fits the anchors?")
 
-    # ── Panel 7: Follow-up distribution (single sim) ──────────────────
+    # ── Panel 7: Follow-up distribution (single sim) 
     ax7 = fig.add_subplot(gs[2, :2])  # cols 0-1
     gps_fu = single_trial["follow_up"][gps_mask]
     bat_fu = single_trial["follow_up"][~gps_mask]
@@ -629,7 +669,7 @@ def plot_simulation_results(
                labelcolor=TEXT_MID)
     style_ax(ax7, "FOLLOW-UP DISTRIBUTION  ·  Filled=all patients, Outline=had event (1 sim)")
 
-    # ── Panel 8: Summary text ─────────────────────────────────────────
+    # ── Panel 8: Summary text 
     ax8 = fig.add_subplot(gs[2, 2])
     ax8.set_facecolor(PANEL_BG)
     ax8.axis("off")
@@ -639,23 +679,20 @@ def plot_simulation_results(
     lines = [
         ("VALIDATION SUMMARY", TEXT_MID, 10, True),
         ("", TEXT_DIM, 8, False),
-        (f"Anchor 1 (mo46): obs={timeline.anchor_1_events}", TEXT_DIM, 8, False),
-        (f"  sim mean: {mc['a1_mean']:.1f}", BLUE, 9, False),
-        (f"  95% CI:   [{mc['a1_ci'][0]:.0f}, {mc['a1_ci'][1]:.0f}]", BLUE, 9, False),
-        (f"  → {consistency_1}", GREEN if obs_in_ci_1 else RED, 9, True),
-        ("", TEXT_DIM, 8, False),
-        (f"Anchor 2 (mo58): obs={timeline.anchor_2_events}", TEXT_DIM, 8, False),
-        (f"  sim mean: {mc['a2_mean']:.1f}", ORANGE, 9, False),
-        (f"  95% CI:   [{mc['a2_ci'][0]:.0f}, {mc['a2_ci'][1]:.0f}]", ORANGE, 9, False),
-        (f"  → {consistency_2}", GREEN if obs_in_ci_2 else RED, 9, True),
+        (f"Anchor 1 (mo59): obs={timeline.anchor_1_events}", TEXT_DIM, 8, False),
+        (f"  sim={mc['a1_mean']:.1f}  CI:[{mc['a1_ci'][0]:.0f},{mc['a1_ci'][1]:.0f}]  → {consistency_1}", GREEN if obs_in_ci_1 else RED, 8, True),
+        (f"Anchor 2 (mo72): obs={timeline.anchor_2_events}", TEXT_DIM, 8, False),
+        (f"  sim={mc['a2_mean']:.1f}  CI:[{mc['a2_ci'][0]:.0f},{mc['a2_ci'][1]:.0f}]  → {consistency_2}", GREEN if obs_in_ci_2 else RED, 8, True),
+        (f"Anchor 3 (mo76): obs={timeline.anchor_3_events}", TEXT_DIM, 8, False),
+        (f"  sim={mc['a3_mean']:.1f}  CI:[{mc['a3_ci'][0]:.0f},{mc['a3_ci'][1]:.0f}]  → {consistency_3}", GREEN if obs_in_ci_3 else RED, 8, True),
         ("", TEXT_DIM, 8, False),
         (f"80th event:", TEXT_DIM, 8, False),
-        (f"  median: mo {mc['m80_median']:.1f}", PURPLE, 9, False),
-        (f"  95% CI: [{mc['m80_ci'][0]:.1f}, {mc['m80_ci'][1]:.1f}]", PURPLE, 9, False),
-        (f"  % sims reaching 80: {mc['pct_reached_80']:.1f}%", PURPLE, 9, False),
+        (f"  median: mo {mc['m80_median']:.1f}", AMBER, 9, False),
+        (f"  95% CI: [{mc['m80_ci'][0]:.1f}, {mc['m80_ci'][1]:.1f}]", AMBER, 9, False),
+        (f"  % sims reaching 80: {mc['pct_reached_80']:.1f}%", AMBER, 9, False),
         ("", TEXT_DIM, 8, False),
-        ("Enrollment: uniform Jan2020–Jun2022", TEXT_DIM, 7, False),
-        (f"n_sims: 10,000  ·  seed: 42", TEXT_DIM, 7, False),
+        ("Enrollment: uniform Jan2020–Mar2024", TEXT_DIM, 7, False),
+        (f"n_patients: {p.n_patients}  ·  n_sims: 10,000", TEXT_DIM, 7, False),
     ]
     y = 0.95
     for text, color, size, bold in lines:
@@ -665,7 +702,7 @@ def plot_simulation_results(
                  transform=ax8.transAxes)
         y -= 0.055
 
-    # ── Panel 9: Arm comparison ───────────────────────────────────────
+    # ── Panel 9: Arm comparison 
     ax9 = fig.add_subplot(gs[2, 3])  # col 3
     ax9.set_facecolor(PANEL_BG)
     ax9.axis("off")
@@ -716,57 +753,52 @@ def plot_simulation_results(
     plt.show()
 
 
-# ─────────────────────────────────────────────
 # Main
-# ─────────────────────────────────────────────
 
 if __name__ == "__main__":
     p        = ModelParams()
     timeline = TrialTimeline()
 
-    # ── Step 1: Sweep first to find implied π ──────────────────────
+    # ── Step 1: Sweep first to find implied π 
     print("\n  [1/2] Sweeping cure fractions (5,000 sims each)...")
-    cf_range = np.linspace(0.05, 0.45, 9)
+    cf_range = np.linspace(0.05, 0.60, 12)
     sweep = sweep_cure_fractions(p, timeline, cf_range, n_sims=5_000, seed=42)
     print()
 
     cf_pct = sweep["cure_fractions"] * 100
 
-    # Interpolate — note: means are DECREASING as π increases
-    # so we need to sort for interp1d to work correctly
-    a1_means = sweep["a1_means"]
-    a2_means = sweep["a2_means"]
+    # Interpolate — means are DECREASING as π increases; sort for interp1d
+    sort_idx_1 = np.argsort(sweep["a1_means"])
+    sort_idx_2 = np.argsort(sweep["a2_means"])
+    sort_idx_3 = np.argsort(sweep["a3_means"])
 
-    # Sort by ascending mean (interp1d needs monotonic x)
-    sort_idx_1 = np.argsort(a1_means)
-    sort_idx_2 = np.argsort(a2_means)
-
-    f_anchor1 = interp1d(
-        a1_means[sort_idx_1], cf_pct[sort_idx_1],
-        kind="linear", fill_value="extrapolate"
-    )
-    f_anchor2 = interp1d(
-        a2_means[sort_idx_2], cf_pct[sort_idx_2],
-        kind="linear", fill_value="extrapolate"
-    )
+    f_anchor1 = interp1d(sweep["a1_means"][sort_idx_1], cf_pct[sort_idx_1],
+                         kind="linear", fill_value="extrapolate")
+    f_anchor2 = interp1d(sweep["a2_means"][sort_idx_2], cf_pct[sort_idx_2],
+                         kind="linear", fill_value="extrapolate")
+    f_anchor3 = interp1d(sweep["a3_means"][sort_idx_3], cf_pct[sort_idx_3],
+                         kind="linear", fill_value="extrapolate")
 
     implied_pi_1 = float(f_anchor1(timeline.anchor_1_events))
     implied_pi_2 = float(f_anchor2(timeline.anchor_2_events))
-    needed_cure_fraction = (implied_pi_1 + implied_pi_2) / 2 / 100  # convert % back to fraction
+    implied_pi_3 = float(f_anchor3(timeline.anchor_3_events))
+    needed_cure_fraction = (implied_pi_1 + implied_pi_2 + implied_pi_3) / 3 / 100
 
-    print(f"  Implied π from anchor 1 (mo46): {implied_pi_1:.1f}%")
-    print(f"  Implied π from anchor 2 (mo58): {implied_pi_2:.1f}%")
+    print(f"  Implied π from anchor 1 (mo59): {implied_pi_1:.1f}%")
+    print(f"  Implied π from anchor 2 (mo72): {implied_pi_2:.1f}%")
+    print(f"  Implied π from anchor 3 (mo76): {implied_pi_3:.1f}%")
     print(f"  Average implied π:              {needed_cure_fraction*100:.1f}%")
     
-    # ── Step 2: Everything else uses needed_cure_fraction ──────────
+    # ── Step 2: Everything else uses needed_cure_fraction 
     print("=" * 60)
     print("  GPS · REGAL · Monte Carlo Enrollment Simulation")
     print("=" * 60)
     print(f"  Trial start:          Jan 2020 (month 0)")
-    print(f"  Enrollment close:     ~Jun 2022 (month {timeline.enrollment_end:.0f})")
-    print(f"  Calendar cutoff:      ~Jan 2026 (month {timeline.calendar_cutoff:.0f})")
-    print(f"  Anchor 1:             {timeline.anchor_1_events} events at month {timeline.anchor_1_month:.0f}")
-    print(f"  Anchor 2:             {timeline.anchor_2_events} events at month {timeline.anchor_2_month:.0f}")
+    print(f"  Enrollment close:     ~Mar 2024 (month {timeline.enrollment_end:.0f})")
+    print(f"  Calendar cutoff:      ~Jan 2027 (month {timeline.calendar_cutoff:.0f})")
+    print(f"  Anchor 1:             {timeline.anchor_1_events} events at month {timeline.anchor_1_month:.0f} (Dec 2024)")
+    print(f"  Anchor 2:             {timeline.anchor_2_events} events at month {timeline.anchor_2_month:.0f} (Dec 2025)")
+    print(f"  Anchor 3:             {timeline.anchor_3_events} events at month {timeline.anchor_3_month:.0f} (May 2026)")
     print(f"  Implied cure fraction π: {needed_cure_fraction*100:.1f}%")
     print(f"  BAT median OS:        {p.bat_median_os}mo")
     print(f"  GPS susceptible mOS:  {p.gps_median_os}mo")
@@ -775,27 +807,35 @@ if __name__ == "__main__":
     # Single trial visualization
     rng_single = np.random.default_rng(99)
     single = simulate_trial(p, timeline, needed_cure_fraction, rng_single)
-    print(f"  Single sim — events at mo46: {single['n_at_anchor_1']}, "
-          f"mo58: {single['n_at_anchor_2']}, "
+    print(f"  Single sim — events at mo59: {single['n_at_anchor_1']}, "
+          f"mo72: {single['n_at_anchor_2']}, "
+          f"mo76: {single['n_at_anchor_3']}, "
           f"80th event: mo {single['month_of_80th_event']:.1f}")
 
-    # ── Step 3: Main Monte Carlo with implied π ─────────────────────
+    # ── Step 3: Main Monte Carlo with implied π 
     print("\n  [2/2] Running main Monte Carlo (10,000 sims)...")
     mc = run_monte_carlo(p, timeline, needed_cure_fraction, n_sims=10_000, seed=42)
 
-    print(f"\n  Anchor 1 (mo46):")
+    print(f"\n  Anchor 1 (mo59 — Dec 2024):")
     print(f"    Observed:  {timeline.anchor_1_events}")
     print(f"    Sim mean:  {mc['a1_mean']:.1f}")
     print(f"    95% CI:    [{mc['a1_ci'][0]:.0f}, {mc['a1_ci'][1]:.0f}]")
     obs_in_1 = mc["a1_ci"][0] <= timeline.anchor_1_events <= mc["a1_ci"][1]
     print(f"    Consistent: {'YES ✓' if obs_in_1 else 'NO ✗'}")
 
-    print(f"\n  Anchor 2 (mo58):")
+    print(f"\n  Anchor 2 (mo72 — Dec 2025):")
     print(f"    Observed:  {timeline.anchor_2_events}")
     print(f"    Sim mean:  {mc['a2_mean']:.1f}")
     print(f"    95% CI:    [{mc['a2_ci'][0]:.0f}, {mc['a2_ci'][1]:.0f}]")
     obs_in_2 = mc["a2_ci"][0] <= timeline.anchor_2_events <= mc["a2_ci"][1]
     print(f"    Consistent: {'YES ✓' if obs_in_2 else 'NO ✗'}")
+
+    print(f"\n  Anchor 3 (mo76 — May 2026):")
+    print(f"    Observed:  {timeline.anchor_3_events}")
+    print(f"    Sim mean:  {mc['a3_mean']:.1f}")
+    print(f"    95% CI:    [{mc['a3_ci'][0]:.0f}, {mc['a3_ci'][1]:.0f}]")
+    obs_in_3 = mc["a3_ci"][0] <= timeline.anchor_3_events <= mc["a3_ci"][1]
+    print(f"    Consistent: {'YES ✓' if obs_in_3 else 'NO ✗'}")
 
     print(f"\n  80th event (final analysis):")
     print(f"    Median calendar month: {mc['m80_median']:.1f}")
