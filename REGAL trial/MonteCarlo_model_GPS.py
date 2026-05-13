@@ -1,6 +1,6 @@
 """
 GPS · REGAL · Monte Carlo Enrollment Simulation
-================================================
+
 Simulates realistic trial enrollment over calendar time, draws
 patient-level event times from the mixture cure model, and validates
 the model's cure fraction estimate against the two SEC-filed event
@@ -38,6 +38,7 @@ from REGAL_model import (
     weibull_survival,
     mixture_cure_survival,
     compute_aggregate_cure_fraction,
+    approximate_hazard_ratio,
 )
 
 # ── cosmetics (match main model) 
@@ -108,11 +109,9 @@ def sample_patient_event_time(
             return np.inf
         else:
             return sample_weibull_time(p.gps_median_os, p.gps_weibull_shape, rng)
+        
     else:  # BAT — small cure fraction from allo-SCT long-term survivors
-        if rng.uniform() < p.bat_cure_fraction:
-            return np.inf
-        else:
-            return sample_weibull_time(p.bat_median_os, p.bat_weibull_shape, rng)
+        return sample_weibull_time(p.bat_median_os, p.bat_weibull_shape, rng)
 
 
 # Enrollment Distribution
@@ -426,6 +425,8 @@ def plot_simulation_results(
     cure_fraction: float,
     single_trial: dict
 ):
+    analytical_hr = approximate_hazard_ratio(p, compute_aggregate_cure_fraction(p))
+
     fig = plt.figure(figsize=(23, 13), facecolor=DARK_BG)
     fig.suptitle(
         "GPS · REGAL  |  Monte Carlo Enrollment Simulation",
@@ -451,7 +452,7 @@ def plot_simulation_results(
         ("Anchor 2 (mo72)",    f"obs={timeline.anchor_2_events} | sim={mc['a2_mean']:.1f}", GREEN if obs_in_ci_2 else RED),
         ("Anchor 3 (mo76)",    f"obs={timeline.anchor_3_events} | sim={mc['a3_mean']:.1f}", GREEN if obs_in_ci_3 else RED),
         ("80th event (median)",f"mo {mc['m80_median']:.1f}",              AMBER),
-        ("Median HR",          f"{mc['hr_median']:.3f}",                  PURPLE),
+        ("Analytical HR",       f"{analytical_hr:.3f}",                    PURPLE),
     ]
     for idx, (lbl, val, col) in enumerate(stats):
         x = 0.02 + idx * 0.163
@@ -717,10 +718,9 @@ def plot_simulation_results(
         ("ARM COMPARISON", TEXT_MID, 10, True),
         ("(across 10k sims, by calendar cutoff)", TEXT_DIM, 7, False),
         ("", TEXT_DIM, 8, False),
-        ("Median HR  (GPS vs BAT)",   TEXT_DIM, 8, False),
-        (f"  {mc['hr_median']:.3f}  "
-         f"[{mc['hr_ci'][0]:.3f}–{mc['hr_ci'][1]:.3f}]",
-         BLUE, 10, True),
+        ("Analytical HR  (GPS vs BAT)",        TEXT_DIM, 8, False),
+        (f"  {analytical_hr:.3f}",             BLUE, 10, True),
+        ("  log(S_GPS)/log(S_BAT) @ BAT mOS", TEXT_DIM, 7, False),
         ("", TEXT_DIM, 8, False),
         ("GPS  % died by cutoff",    TEXT_DIM, 8, False),
         (f"  {mc['gps_event_pct_median']:.1f}%  "

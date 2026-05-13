@@ -1,6 +1,6 @@
 """
 GPS (Galinpepimut-S) · REGAL · Mixture Cure Model
-===================================================
+
 Parametric survival analysis with HLA-stratified cure fraction estimation.
 Grounded in Phase 2 immunologic correlate data (Blood 2019) and historical
 AML CR2 BAT benchmarks.
@@ -22,15 +22,15 @@ class ModelParams:
     hla_positive_rate: float = 0.45        # ~45% HLA-A*02:01+ in European AML population
     cd8_response_rate: float = 0.86        # 6/7 HLA-A*02+ tested → CD8+ response (Phase 2)
     cd4_response_rate: float = 0.44        # 4/9 patients → CD4+ response (Phase 2)
-    hla_neg_pop: float = 0.55              # 
-    cure_fraction_responders: float = 0.38  # conservative DFS plateau in immunologic responders
-    cure_fraction_hla_neg: float = 0.15    # lowered from 0.30 — HLA-neg benefit is speculative
+    hla_neg_pop: float = 0.55              
+    cure_fraction_responders: float = 0.575  # conservative DFS plateau in immunologic responders
+    cure_fraction_hla_neg: float = 0.30    # HLA-neg benefit via CD4 epitopes (speculative)
     hla_neg_cure_fraction: float = 0.025   # Small residual cure via non-A*02 MHC I + CD4 epitopes
 
-    # BAT arm — AML CR2 including allo-SCT eligible patients
-    bat_median_os: float = 14.0            # months for susceptible (non-allo-SCT-cured) BAT patients
+    # BAT arm — AML CR2 (no allo-SCT in REGAL protocol)
+    bat_median_os: float = 12.0            # months; historical AML CR2 BAT benchmark
     bat_weibull_shape: float = 1.2         # k > 1 = increasing hazard (appropriate for AML)
-    bat_cure_fraction: float = 0.12        # ~12% long-term survivors via allo-SCT (~35% get SCT × ~35% cure)
+    bat_cure_fraction: float = 0.0
 
     # GPS arm — non-cured susceptible subpopulation
     gps_median_os: float = 20.0            # months for non-cured GPS patients
@@ -81,6 +81,7 @@ def compute_aggregate_cure_fraction(p: ModelParams) -> float:
     """
     cd8_cure = p.hla_positive_rate * p.cd8_response_rate * p.cure_fraction_responders
     hla_negative_cure = p.cd4_response_rate * p.hla_neg_pop * p.cure_fraction_hla_neg
+
     return min(cd8_cure + hla_negative_cure, 0.7)
 
 
@@ -107,6 +108,7 @@ def mixture_cure_hazard(
     h_sus = weibull_hazard(t, median_os, shape)
     f_sus = h_sus * s_sus  # density for susceptible
     s_mix = mixture_cure_survival(t, cure_fraction, median_os, shape)
+
     return np.where(s_mix > 1e-9, (1 - cure_fraction) * f_sus / s_mix, 0.0)
 
 
@@ -125,10 +127,12 @@ def event_velocity(
     """
     starts = np.arange(0, t[-1] - window + 1, window)
     counts = []
+
     for s in starts:
         s1 = survival_fn(np.array([s]))[0]
         s2 = survival_fn(np.array([s + window]))[0]
         counts.append(n_patients * (s1 - s2))
+
     return starts, np.array(counts)
 
 
@@ -148,8 +152,10 @@ def approximate_hazard_ratio(
     s_gps = mixture_cure_survival(
         np.array([t]), cure_fraction, p.gps_median_os, p.gps_weibull_shape
     )[0]
+
     if s_bat <= 0 or s_gps <= 0:
         return np.nan
+    
     return np.log(s_gps) / np.log(s_bat)
 
 
@@ -160,6 +166,7 @@ def normal_cdf(x: float) -> float:
 def approximate_pvalue(hr: float, n_events: int) -> float:
     """Log-rank z-score approximation."""
     z = -np.log(hr) * np.sqrt(n_events / 4)
+
     return min(1 - normal_cdf(z), 0.5)
 
 
